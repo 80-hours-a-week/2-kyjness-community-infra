@@ -1,12 +1,10 @@
-# PuppyTalk - 통합 (infra 폴더에서: docker compose up -d)
-# nginx: http://localhost  |  프론트 직접: 8080  |  백엔드 직접: 8000  |  MySQL: 3306
-
 name: puppytalk
 
 services:
+  # 1. Reverse Proxy
   nginx:
     image: nginx:alpine
-    container_name: puppytalk-nginx
+    container_name: nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -16,76 +14,104 @@ services:
       - backend
       - frontend
     networks:
-      - puppytalk-net
+      - puppytalk-network
 
-  mysql:
-    image: mysql:8.0
-    container_name: puppytalk-mysql
+  # 2. Database (PostgreSQL)
+  db:
+    image: postgres:15-alpine
+    container_name: db
     restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${DB_NAME:-puppytalk}
     ports:
-      - "3306:3306"
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-puppytalk}
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ../2-kyjness-community-be/docs/puppytalkdb.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
-      interval: 5s
-      timeout: 10s
-      retries: 15
-      start_period: 45s
+      - postgres_data:/var/lib/postgresql/data
     networks:
-      - puppytalk-net
+      - puppytalk-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-puppytalk}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
+  # 3. Cache
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes #데이터 영구저장 활성화
+    volumes:
+      - redis_data:/data
+    networks:
+      - puppytalk-network
+
+  # 4. Object Storage (S3-compatible, for dev/staging; prod에서는 AWS S3 사용)
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # 백엔드 API 통신용
+      - "9001:9001" # 개발자 관리 화면 접속용
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    networks:
+      - puppytalk-network
+
+  # 5. Backend (FastAPI + Alembic Auto Migration)
   backend:
-    image: kyjness/puppytalk-backend:latest
+    image: kyjness/puppytalk-be:latest
     build:
       context: ../2-kyjness-community-be
       dockerfile: Dockerfile
-    container_name: puppytalk-backend
+    container_name: backend
     restart: unless-stopped
     env_file:
-      - ../2-kyjness-community-be/.env.production
-    environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: ${DB_USER:-root}
-      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
-      DB_NAME: ${DB_NAME:-puppytalk}
-      BE_API_URL: ${BE_API_URL:-http://localhost}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://127.0.0.1}
-    ports:
-      - "8000:8000"
-    volumes:
-      - backend_upload:/app/upload
+      - .env
+    command: >
+      sh -c "alembic upgrade head && 
+             exec gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000"
     depends_on:
-      mysql:
+      db:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
-      - puppytalk-net
+      - puppytalk-network
+    # 호스트 포트 미노출: Nginx 리버스 프록시를 통해서만 접근
 
+  # 6. Frontend
   frontend:
-    image: kyjness/puppytalk-frontend:latest
+    image: kyjness/puppytalk-fe:latest
     build:
       context: ../2-kyjness-community-fe
       dockerfile: Dockerfile
       args:
-        API_BASE_URL: /v1
-    container_name: puppytalk-frontend
+        VITE_API_BASE_URL: /v1 
+    container_name: frontend
     restart: unless-stopped
-    ports:
-      - "8080:80"
     depends_on:
       - backend
+    # 호스트 포트 미노출: Nginx 리버스 프록시를 통해서만 접근
     networks:
-      - puppytalk-net
+      - puppytalk-network
 
 volumes:
-  mysql_data:
-  backend_upload:
+  postgres_data:
+  redis_data:
+  minio_data:
+
 
 networks:
-  puppytalk-net:
+  puppytalk-network:
     driver: bridge

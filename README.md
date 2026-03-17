@@ -1,91 +1,110 @@
 # PuppyTalk Infra
 
 **PuppyTalk** 커뮤니티 서비스의 인프라·배포 설정 레포입니다.  
-Docker Compose(로컬/EC2 동일), 이후 Kubernetes 등 배포 정의를 이 레포에서 관리합니다.
+Docker Compose로 Nginx(리버스 프록시), 백엔드(FastAPI), 프론트엔드(React), PostgreSQL, Redis, MinIO를 한 번에 기동합니다.
 
 - **백엔드**: [2-kyjness-community-be](https://github.com/kyjness/2-kyjness-community-be)
 - **프론트엔드**: [2-kyjness-community-fe](https://github.com/kyjness/2-kyjness-community-fe)
 
 ---
 
-## 디렉터리 구조
+## 포트
 
-```
-2-kyjness-community-infra/
-├── docker-compose.yml    # 통합 (nginx + MySQL + 백엔드 + 프론트엔드)
-├── nginx/
-│   └── default.conf     # nginx 리버스 프록시 (/ → 프론트, /v1 → 백엔드)
-├── docs/
-│   └── docker.md        # Docker 이미지 단독 빌드·실행 등
-├── .env.example         # 환경 변수 예시 (복사 후 .env 사용)
-└── README.md
-```
+| 용도 | 호스트 포트 | 접속 URL |
+|------|-------------|----------|
+| **웹 전체** (Nginx) | 80 | http://localhost — 프론트(/)·API(/v1/) 통합 |
+| **PostgreSQL** (직접 접속) | 5432 | `localhost:5432` (DB 클라이언트용) |
+| **Redis** (직접 접속) | 6379 | `localhost:6379` |
+| **MinIO API** | 9000 | http://localhost:9000 (S3 호환) |
+| **MinIO 콘솔** | 9001 | http://localhost:9001 (웹 UI) |
 
----
-
-## 사전 준비
-
-Compose 경로(`../2-kyjness-community-be` 등)가 맞으려면 **백엔드·프론트엔드·infra 레포가 같은 상위 폴더 아래 나란히** 있어야 합니다. (실행은 **infra 레포 안**에서 합니다.)
-
-```
-상위폴더/
-├── 2-kyjness-community-be/
-├── 2-kyjness-community-fe/
-└── 2-kyjness-community-infra/   ← 여기서 docker compose 실행
-```
-
-1. 상위 폴더에서 세 레포를 clone 한 뒤, **infra 폴더로 이동**합니다.
-2. 백엔드 레포에 `.env.production`을 준비합니다. (백엔드 README 참고)
-3. (선택) infra에서 `.env.example`을 복사해 `.env`로 저장하고, DB 비밀번호·CORS·BE_API_URL 등 필요 시 수정합니다.
+백엔드·프론트는 호스트에 포트를 열지 않고, Nginx(80)를 통해서만 접근합니다.
 
 ---
 
 ## 실행 방법
 
-**모든 명령은 `2-kyjness-community-infra` 레포 안에서 실행합니다.**
+### 1. 레포 배치
 
-### 전체 스택 기동
+백엔드·프론트·인프라 세 레포가 **같은 상위 폴더**에 있어야 합니다.
+
+```
+상위폴더/
+├── 2-kyjness-community-be/
+├── 2-kyjness-community-fe/
+└── 2-kyjness-community-infra/   ← 여기서 아래 명령 실행
+```
+
+### 2. 환경 변수
 
 ```bash
 cd 2-kyjness-community-infra
-docker compose up -d
+cp .env.example .env
 ```
 
-- **접속**: http://localhost (로컬) 또는 http://서버IP (EC2)
-- **API**: http://localhost/v1 (또는 서버IP/v1)
-- **API 문서**: http://localhost/v1/docs
+`.env`에서 아래 항목을 반드시 설정하세요.
 
-nginx가 80 포트로 받아서 `/`는 프론트엔드, `/v1`은 백엔드로 전달합니다.
+- `POSTGRES_PASSWORD`, `DB_PASSWORD`: 동일한 비밀번호
+- `JWT_SECRET_KEY`: 32자 이상 랜덤 문자열 (배포 시 필수)
+- MinIO/S3 사용 시: `STORAGE_BACKEND=s3`, `S3_BUCKET_NAME`, `S3_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (예시는 `.env.example` 참고)
 
-**직접 포트 접속** (디버깅·개발 시):
-- nginx: 80
-- 프론트엔드: http://localhost:8080
-- 백엔드 API·문서: http://localhost:8000, http://localhost:8000/docs
-- MySQL: 3306
+### 3. 스택 기동
 
-### 부분 기동
+```bash
+docker compose up --build -d
+```
 
-- **MySQL + 백엔드만**: `docker compose up -d mysql backend`
-- **중지**: `docker compose down`
-- **볼륨까지 삭제**: `docker compose down -v` (주의: DB·업로드 데이터 삭제)
+- 첫 실행은 `--build`로 이미지 빌드 후 기동.
+- 코드 수정 없이 재기동만 할 때: `docker compose up -d`
+
+백엔드 컨테이너 기동 시 `alembic upgrade head`가 자동 실행되어 DB 마이그레이션이 적용됩니다.
+
+### 4. 동작 확인
+
+- **프론트**: http://localhost  
+- **API 루트**: http://localhost/v1/  
+- **API 문서 (Swagger)**: http://localhost/v1/docs  
+- **헬스**: http://localhost/v1/health  
+
+마이그레이션만 수동 실행하려면:
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+### 5. MinIO 버킷 공개 설정 (이미지 Access Denied 해결)
+
+MinIO 기본 계정은 `minioadmin` / `minioadmin`입니다. 프로필·게시글 이미지가 브라우저에서 바로 보이려면 **버킷을 읽기(다운로드) 공개**로 한 번 설정해야 합니다. 스택 기동 후 아래를 실행하세요.
+
+```bash
+# 1. mc로 MinIO에 관리자 alias 등록 (이름 myminio, 기본 계정 사용)
+docker exec minio mc alias set myminio http://localhost:9000 minioadmin minioadmin
+
+# 2. puppytalk 버킷을 누구나 다운로드 가능하게 설정
+docker exec minio mc anonymous set download myminio/puppytalk
+```
+
+- `.env`의 `S3_BUCKET_NAME`이 `puppytalk`가 아니면 두 번째 명령의 `puppytalk`를 해당 버킷 이름으로 바꾸세요.
+- MinIO 콘솔(http://localhost:9001)에서 버킷 → Access Rules로 같은 설정을 할 수도 있습니다.
+
+### 6. 종료
+
+```bash
+docker compose down
+```
+
+### 7. 볼륨까지 삭제 (DB·Redis·MinIO 데이터 초기화)
+
+```bash
+docker compose down -v
+```
+
+- `postgres_data`, `redis_data`, `minio_data`가 삭제됩니다.
+
+---
+
+## 기타
+
 - **재빌드 후 기동**: `docker compose up --build -d`
-
----
-
-## Volume
-
-- **mysql_data**: MySQL 데이터 유지
-- **backend_upload**: 백엔드 업로드 파일 유지
-
-`docker compose down -v` 시 볼륨까지 삭제되므로, 데이터를 보존하려면 `-v`를 붙이지 않습니다.
-
----
-
-- **Docker 이미지 단독 빌드·실행** 등 상세: [docs/docker.md](docs/docker.md)
-
----
-
-## 확장 (예정)
-
-- Kubernetes 매니페스트·Helm 차트
-- CI/CD 파이프라인 정의
+- **백엔드만 재시작**: `docker compose restart backend`
+- **로그**: `docker compose logs -f backend` / `docker compose logs -f frontend` / `docker compose logs -f nginx`
