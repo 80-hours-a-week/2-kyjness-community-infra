@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 
-# 로컬 오버라이드
+# 로컬 Docker용 (docker-compose.local.yml). .env.*에 포함되나 경로 명시
 .env.local
+
+# 기타 로컬 전용 파일
 *.local

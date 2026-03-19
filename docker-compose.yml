@@ -15,7 +15,6 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
-      - frontend
     networks:
       - puppytalk-network
 
@@ -26,16 +25,14 @@ services:
     restart: unless-stopped
     ports:
       - "5432:5432"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-puppytalk}
+    env_file:
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - puppytalk-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-puppytalk}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -51,23 +48,6 @@ services:
     command: redis-server --appendonly yes #데이터 영구저장 활성화
     volumes:
       - redis_data:/data
-    networks:
-      - puppytalk-network
-
-  # 4. Object Storage (S3-compatible, for dev/staging; prod에서는 AWS S3 사용)
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    restart: unless-stopped
-    ports:
-      - "9000:9000" # 백엔드 API 통신용
-      - "9001:9001" # 개발자 관리 화면 접속용
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    volumes:
-      - minio_data:/data
     networks:
       - puppytalk-network
 
@@ -93,26 +73,9 @@ services:
       - puppytalk-network
     # 호스트 포트 미노출: Nginx 리버스 프록시를 통해서만 접근
 
-  # 6. Frontend
-  frontend:
-    image: kyjness/puppytalk-fe:latest
-    build:
-      context: ../2-kyjness-community-fe
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: /v1 
-    container_name: frontend
-    restart: unless-stopped
-    depends_on:
-      - backend
-    # 호스트 포트 미노출: Nginx 리버스 프록시를 통해서만 접근
-    networks:
-      - puppytalk-network
-
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
 
 
 networks:
