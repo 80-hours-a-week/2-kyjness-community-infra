@@ -1,0 +1,10 @@
+# 환경 변수 (비밀번호·시크릿 포함, 절대 커밋 금지)
+.env
+.env.*
+!.env.example
+
+# 로컬 Docker용 (docker-compose.local.yml). .env.*에 포함되나 경로 명시
+.env.local
+
+# 기타 로컬 전용 파일
+*.local
