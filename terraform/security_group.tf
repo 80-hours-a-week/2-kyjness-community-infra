@@ -1,18 +1,19 @@
-# A. ALB 보안 그룹 (80포트와 443포트 모두 개방)
+# ALB: 인터넷 → 80(HTTPS로 301)·443(종단 TLS) 수신 (ECS는 ALB 경유만 허용)
 resource "aws_security_group" "alb_sg" {
-  name   = "${var.project_name}-alb-sg"
-  vpc_id = aws_vpc.main.id
+  name_prefix = "${var.project_name}-alb-sg-"
+  description = "ALB inbound HTTP redirect + HTTPS"
+  vpc_id      = aws_vpc.main.id
 
-  # HTTP (80) - HTTPS로의 리다이렉트를 위해 필요함
   ingress {
+    description = "HTTP from internet (redirect to HTTPS)"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # HTTPS (443) - 실질적인 보안 접속 통로 (추가된 부분)
   ingress {
+    description = "HTTPS from internet"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -25,18 +26,25 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = { Name = "${var.project_name}-alb-sg" }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# B. ECS 서비스 보안 그룹 (오직 ALB를 통해서만 8000포트 접근 허용)
+# ECS Fargate: 앱 포트는 ALB SG에서만 허용 (순환 참조 없음: ecs_sg → alb_sg 단방향)
 resource "aws_security_group" "ecs_sg" {
   name   = "${var.project_name}-ecs-sg"
   vpc_id = aws_vpc.main.id
 
   ingress {
+    description     = "App HTTP from ALB only"
     from_port       = 8000
     to_port         = 8000
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id] # ALB SG만 통과 가능
+    security_groups = [aws_security_group.alb_sg.id]
   }
 
   egress {
@@ -47,7 +55,7 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
-# C. DB/Redis EC2 보안 그룹 (오직 ECS 서비스에서 오는 요청만 DB/Redis 포트 허용)
+# DB/Redis EC2 (ECS SG에서만 5432/6379)
 resource "aws_security_group" "db_sg" {
   name   = "${var.project_name}-db-sg"
   vpc_id = aws_vpc.main.id
@@ -74,6 +82,35 @@ resource "aws_security_group" "db_sg" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"] # 나중에 본인 IP로 제한하는 것을 추천합니다!
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# 젠킨스 서버 (8080, 22)
+resource "aws_security_group" "jenkins_sg" {
+  name   = "${var.project_name}-jenkins-sg"
+  vpc_id = aws_vpc.main.id
+
+  # 젠킨스 웹 접속 포트
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH 접속 통로
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # 운영 시 관리자 IP로 제한 권장
   }
 
   egress {

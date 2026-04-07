@@ -1,18 +1,17 @@
-# 1. 기존 Route 53 호스팅 영역 정보 불러오기
-data "aws_route53_zone" "selected" {
-  name         = "puppytalk.shop"
-  private_zone = false
+# Route 53 호스팅 영역
+resource "aws_route53_zone" "selected" {
+  name = var.domain_name
 }
 
-# 2. 백엔드 API용 A 레코드 (api.puppytalk.shop -> ALB)
+# api.<domain> → ALB (443 종단 TLS + 80→301, 인증서는 acm.tf alb_api)
 resource "aws_route53_record" "api" {
-  zone_id = data.aws_route53_zone.selected.zone_id
+  zone_id = aws_route53_zone.selected.zone_id
   name    = "api.${var.domain_name}"
   type    = "A"
 
   alias {
-    name                   = aws_lb.main.dns_name
-    zone_id                = aws_lb.main.zone_id
+    name                   = aws_lb.be_alb.dns_name
+    zone_id                = aws_lb.be_alb.zone_id
     evaluate_target_health = true
   }
 }

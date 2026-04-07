@@ -64,18 +64,18 @@ data "aws_ami" "amazon_linux_2023" {
 # 2. SSH 접속을 위한 키 페어
 resource "aws_key_pair" "deployer" {
   key_name   = "${var.project_name}-key"
-  public_key = file("~/.ssh/id_rsa.pub") 
+  public_key = file("~/.ssh/id_rsa.pub")
 }
 
 # 3. 데이터베이스 전용 EC2 인스턴스
 resource "aws_instance" "db_server" {
   ami           = data.aws_ami.amazon_linux_2023.id
-  instance_type = "t3.micro" 
+  instance_type = "t3.micro"
 
   subnet_id                   = aws_subnet.public_1.id
   vpc_security_group_ids      = [aws_security_group.db_sg.id]
   key_name                    = aws_key_pair.deployer.key_name
-  associate_public_ip_address = true 
+  associate_public_ip_address = true
 
   user_data                   = local.db_bootstrap_script
   user_data_replace_on_change = true
@@ -83,13 +83,4 @@ resource "aws_instance" "db_server" {
   tags = {
     Name = "${var.project_name}-db-server"
   }
-}
-
-# 4. 접속 주소 출력
-output "db_server_public_ip" {
-  value       = aws_instance.db_server.public_ip
-}
-
-output "db_server_private_ip" {
-  value       = aws_instance.db_server.private_ip
 }

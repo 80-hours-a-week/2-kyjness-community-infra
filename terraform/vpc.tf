@@ -11,9 +11,9 @@ resource "aws_vpc" "main" {
 
 # 2. 퍼블릭 서브넷 1 (가용영역 2a) - ALB 및 퍼블릭 서비스용
 resource "aws_subnet" "public_1" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "${var.region}a"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.region}a"
   map_public_ip_on_launch = true # 이 서브넷에 생성되는 리소스는 퍼블릭 IP를 가짐
 
   tags = {
@@ -23,9 +23,9 @@ resource "aws_subnet" "public_1" {
 
 # 3. 퍼블릭 서브넷 2 (가용영역 2c) - 고가용성을 위한 보조 서브넷
 resource "aws_subnet" "public_2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "${var.region}c"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "${var.region}c"
   map_public_ip_on_launch = true
 
   tags = {
@@ -47,7 +47,7 @@ resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block = "0.0.0.0/0" # 모든 외부 트래픽은
+    cidr_block = "0.0.0.0/0"                 # 모든 외부 트래픽은
     gateway_id = aws_internet_gateway.igw.id # 인터넷 게이트웨이로 보냄
   }
 

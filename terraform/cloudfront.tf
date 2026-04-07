@@ -45,8 +45,8 @@ resource "aws_cloudfront_distribution" "frontend" {
     path_pattern     = "/media/*"
     target_origin_id = "MediaS3"
 
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
+    allowed_methods = ["GET", "HEAD"]
+    cached_methods  = ["GET", "HEAD"]
 
     forwarded_values {
       query_string = false
@@ -80,7 +80,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 
 # 도메인 A 레코드 (Route 53 연결)
 resource "aws_route53_record" "frontend" {
-  zone_id = data.aws_route53_zone.selected.zone_id
+  zone_id = aws_route53_zone.selected.zone_id
   name    = var.domain_name
   type    = "A"
 
