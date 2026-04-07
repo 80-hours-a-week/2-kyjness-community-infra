@@ -1,0 +1,40 @@
+# -----------------------------------------------------------------------------
+# Argo Rollouts Blue/Green: activeService / previewService로 참조됩니다.
+# 트래픽 전환은 Rollout Controller가 ReplicaSet·Service 셀렉터를 갱신하며 수행합니다.
+# Controller 설치 전제는 rollout.yaml 상단 주석을 참고하세요.
+#
+# 외부(인터넷) 트래픽: terraform/alb.tf의 ECS용 ALB와 별개로, EKS에서는 보통
+# AWS Load Balancer Controller의 Ingress가 ALB를 만들고 본 active Service로 라우팅합니다.
+# (리소스는 Ingress 매니페스트에서 별도 관리)
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: puppytalk-api-active
+  labels:
+    app.kubernetes.io/name: puppytalk-api
+    app.kubernetes.io/component: active
+spec:
+  type: ClusterIP
+  selector:
+    app: puppytalk-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: puppytalk-api-preview
+  labels:
+    app.kubernetes.io/name: puppytalk-api
+    app.kubernetes.io/component: preview
+spec:
+  type: ClusterIP
+  selector:
+    app: puppytalk-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
